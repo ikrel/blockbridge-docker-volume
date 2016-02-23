@@ -80,7 +80,7 @@ module Helpers
       File.join(volumes_root, vol_name)
     end
 
-    def api_token
+    def system_access_token
       ENV['BLOCKBRIDGE_API_KEY']
     end
 

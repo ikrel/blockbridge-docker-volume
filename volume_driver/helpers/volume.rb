@@ -17,9 +17,7 @@ module Helpers
             "BLOCKBRIDGE_VOLUME_PATH"    => vol_path,
             "BLOCKBRIDGE_MOUNT_PATH"     => mnt_path,
             "BLOCKBRIDGE_MODULES_EXPORT" => "1",
-            "BLOCKBRIDGE_API_KEY"        => api_token,
             "BLOCKBRIDGE_API_HOST"       => api_host,
-            "BLOCKBRIDGE_API_SU"         => volume_user,
           }
 
           # set volume params in environment
@@ -29,6 +27,9 @@ module Helpers
 
           env
         end
+      @volume_env["BLOCKBRIDGE_API_KEY"] = volume_access_token
+      @volume_env["BLOCKBRIDGE_API_SU"]  = volume_su_user
+      @volume_env.reject { |k, v| v.nil? }
     end
 
     def volume_cmd_exec(cmd)
@@ -39,6 +40,8 @@ module Helpers
       [
         :type,
         :user,
+        :otp,
+        :access_token,
         :capacity,
         :attributes,
         :iops,
@@ -107,9 +110,12 @@ module Helpers
         env_file_params
       elsif volume_profile
         profile = volume_profile.reject { |k, v| k == :name }
+        opts.each { |key,val| profile[key] = val if vol_param_keys.include? key } if opts
         logger.info "#{vol_name} using volume info from profile #{volume_profile[:name]}: #{profile}"
         profile
       elsif env_file_default
+        env_file_default_params
+        opts.each { |key,val| env_file_default_params[key] = val if vol_param_keys.include? key } if opts
         logger.info "#{vol_name} using volume info from environment file #{env_file_default}: #{env_file_default_params}"
         env_file_default_params
       else
@@ -144,6 +150,7 @@ module Helpers
       info.map do |xmd|
         v = xmd[:data][:volume]
         v[:hosts] = volume_hosts(xmd) if volume_hosts(xmd).length > 0
+        v.delete(:scope_token)
         v
       end
     end
@@ -195,8 +202,8 @@ module Helpers
         volume_clone
       else
         volume_provision
-        volume_mkfs
       end
+      volume_scope_token
       logger.info "#{vol_name} created"
     rescue
       volume_cmd_exec("bb_remove") rescue nil
@@ -218,6 +225,70 @@ module Helpers
         volume_cmd_exec("bb_remove")
       end
       logger.info "#{vol_name} removed"
+    end
+
+    def volume_scoped
+      case env['REQUEST_URI']
+      when '/VolumeDriver.Unmount'
+        true
+      else
+        false
+      end
+    end
+
+    def volume_access_token
+      # if otp specified, use session token. Either auth login to create one or use valid one.
+      # - if can't SU, then it will fail. RETURN good error here saying can't SU
+      #
+      # if otp not specified, use user token. If not user token, use system + su
+      # - if otp is required by user, it will fail. RETURN GOOD error here saying OTP required.
+      #
+      # - User has OTP enabled
+      # - User has SU disabled
+      # - User token should be created with respect OTP
+      # - System token should be created with respect OTP
+      otp = volume_params[:otp]
+      if otp
+        if session_token_valid? otp
+          token = get_session_token(otp)
+        else
+          if volume_params[:access_token]
+            # login otp with user access token
+            token = auth_login_otp(otp, volume_params[:access_token])
+          else
+            # login otp with system token and SU
+            token = auth_login_otp(otp, system_access_token, volume_user)
+          end
+          set_session_token(otp, token)
+        end
+      else
+        if volume_scoped && (scope_token = volume_scope_token)
+          token = scope_token
+        elsif volume_params[:access_token]
+          token = volume_params[:access_token]
+        else
+          token = system_access_token
+        end
+      end
+      token
+    end
+
+    def volume_su_user
+      return if volume_access_token != system_access_token
+      volume_user
+    end
+
+    def auth_login_otp(otp, token, su = nil)
+      cmd = "bb -k auth login --otp #{otp} --access-token #{token} #{su ? '--su su' : ""} --expires-in 60"
+      cmd_exec(cmd)
+
+      cmd = "bb -k auth token"
+      token = cmd_exec_raw(cmd)
+    end
+
+    def volume_scope_token
+      volume = volume_info.first
+      return volume[:scope_token]
     end
 
     def volume_provision
@@ -249,6 +320,7 @@ module Helpers
       mount_ref
       logger.info "#{vol_name} mounting if needed..."
       volume_cmd_exec("bb_attach")
+      volume_cmd_exec("bb_mkfs")
       volume_cmd_exec("bb_mount")
       logger.info "#{vol_name} mounted"
     end

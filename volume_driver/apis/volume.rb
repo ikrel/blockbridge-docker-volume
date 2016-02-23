@@ -11,6 +11,8 @@ class API::Volume < Grape::API
     optional :profile,      type: String,  desc: 'volume profile'
     optional :type,         type: String,  desc: 'volume type', volume_type: true
     optional :user,         type: String,  desc: 'volume user (owner)'
+    optional :otp,          type: String,  desc: 'volume one time password (OTP)'
+    optional :access_token, type: String,  desc: 'API access token for user authentication'
     optional :capacity,     type: String,  desc: 'volume capacity'
     optional :iops,         type: Integer, desc: 'volume provisioning IOPS (QoS)'
     optional :attributes,   type: String,  desc: 'volume attributes'

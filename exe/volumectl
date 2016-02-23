@@ -147,6 +147,7 @@ class CreateCommand < Command
     enum_check(val, %w(autovol autoclone snappy))
   end
   option '--user', 'USER', 'volume owner'
+  option '--access-token', 'TOKEN', 'API access token for user authentication'
   option '--capacity', 'CAPACITY', 'request volume capacity (bytes, N GiB, etc.)'
   option '--iops', 'IOPS', 'requested service IOPS'
   option '--clone-basis', 'CLONE-BASIS', '(autoclone) clone basis disk'
@@ -163,6 +164,7 @@ class CreateCommand < Command
       h[:name]         = name 
       h[:type]         = type
       h[:user]         = user
+      h[:access_token] = access_token
       h[:capacity]     = capacity
       h[:iops]         = iops
       h[:attributes]   = attributes.join(' ') if attributes.length > 0
@@ -176,6 +178,14 @@ class CreateCommand < Command
   def volume_create_params
     create_params.tap { |h|
       h[:profile] = profile
+      h[:otp]     = otp
+    }.reject { |_, v| v.nil? }
+  end
+
+  def volume_remove_params
+    Hash.new.tap { |h|
+      h[:name] = name
+      h[:otp]  = otp
     }.reject { |_, v| v.nil? }
   end
 end
@@ -183,6 +193,7 @@ end
 class VolumeCreate < CreateCommand
   option '--name', 'VOLUME', 'volume name', :required => true
   option '--profile', 'PROFILE', 'storage profile'
+  option '--otp', 'OTP', 'one time password authentication'
   parameter '[ATTRIBUTES] ...', 'provisioning attributes (+tag to include, -tag to exclude)', :attribute_name => :attributes
 
   def exec
@@ -192,9 +203,10 @@ end
 
 class VolumeRemove < Command
   option '--name', 'VOLUME', 'volume name', :required => true
+  option '--otp', 'OTP', 'one time password authentication'
 
   def exec
-    volume_api.delete(name: name).body
+    volume_api.delete(volume_remove_params).body
   end
 end
 

@@ -93,25 +93,29 @@ class API::VolumeDriver < Grape::API
   default_format :json
 
   rescue_from Grape::Exceptions::ValidationErrors do |e|
+    env.logger.info e.message.chomp.squeeze("\n")
     error!({ Err: e.message, validation_failures: e }, 400)
   end
 
   rescue_from Blockbridge::NotFound do |e|
+    env.logger.info e.message.chomp.squeeze("\n")
     error!({ Err: e.message }, 400)
   end    
 
   rescue_from Blockbridge::CommandError do |e|
+    env.logger.info e.message.chomp.squeeze("\n")
     error!({ Err: e.message }, 400)
   end    
 
   rescue_from Blockbridge::ResourcesUnavailable do |e|
+    env.logger.info e.message.chomp.squeeze("\n")
     error!({ Err: e.message }, 400)
   end    
 
   rescue_from :all do |e|
     msg = e.message.chomp.squeeze("\n")
     msg.each_line do |m| env.logger.error(m.chomp) end
-    #e.backtrace.each do |b| env.logger.error(b) end
+    e.backtrace.each do |b| env.logger.error(b) end
     error!(Err: msg)
   end
 
