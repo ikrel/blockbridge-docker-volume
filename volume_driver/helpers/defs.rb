@@ -9,7 +9,7 @@ module Helpers
     end
 
     def vol_name
-      @vol_name ||= params[:Name] || params[:name]
+      @vol_name ||= parse_params_name || params[:Name] || params[:name]
     end
 
     def profile_name
@@ -95,7 +95,7 @@ module Helpers
 
     def params_opts
       return params['Opts'].deep_symbolize_keys if params['Opts']
-      return params
+      return params.deep_symbolize_keys
     end
 
     def params_type

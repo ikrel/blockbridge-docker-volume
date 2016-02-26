@@ -181,13 +181,6 @@ class CreateCommand < Command
       h[:otp]     = otp
     }.reject { |_, v| v.nil? }
   end
-
-  def volume_remove_params
-    Hash.new.tap { |h|
-      h[:name] = name
-      h[:otp]  = otp
-    }.reject { |_, v| v.nil? }
-  end
 end
 
 class VolumeCreate < CreateCommand
@@ -204,6 +197,13 @@ end
 class VolumeRemove < Command
   option '--name', 'VOLUME', 'volume name', :required => true
   option '--otp', 'OTP', 'one time password authentication'
+
+  def volume_remove_params
+    Hash.new.tap { |h|
+      h[:name] = name
+      h[:otp]  = otp
+    }.reject { |_, v| v.nil? }
+  end
 
   def exec
     volume_api.delete(volume_remove_params).body

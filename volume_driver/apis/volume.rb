@@ -32,7 +32,7 @@ class API::Volume < Grape::API
 
   desc 'List all volumes'
   get do
-    body(volume_info)
+    body(volume_lookup_all)
   end
 
   route_param :name do

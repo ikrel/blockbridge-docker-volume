@@ -11,10 +11,28 @@ module Helpers
     def parse_params(params)
       return unless params[:Name] && params[:Name].include?('=')
       params[:Opts] ||= {}
-      params[:Name].scan(/([^=,]+)=([^=,]+)/) do |key, val|
+
+      # find leading 'name(,key=val...)'
+      params[:Name].scan(/(\A[^,]+)/) do |val|
+        next if val[0].include?('=')
+        params[:Opts][:name] = val[0]
+      end
+
+      # find 'key=val(,key=val...)
+      params[:Name].sub(/\A#{params[:Opts][:name]},/, '').scan(/([^=,]+)=([^=,]+)/) do |key, val|
         params[:Opts][key.to_sym] = val
       end
-      params[:Name] = params[:Opts].delete(:name) if params[:Opts].has_key? :name
+
+      pp params
+    end
+
+    def parse_params_name
+      return unless params[:Name] && params[:Name].include?('=')
+      return params[:Opts][:name] if params[:Opts]
+    end
+
+    def params_name
+      return params[:Name]
     end
 
     def session_token_valid?(otp)
@@ -25,7 +43,7 @@ module Helpers
 
     def get_session_token(otp)
       return unless session_token_valid?(otp)
-      Params.volume_session[vol_name][:token]
+      Params.volume_sessions[vol_name][:token]
     end
 
     def set_session_token(otp, token)

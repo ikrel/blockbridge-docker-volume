@@ -36,11 +36,16 @@ module Helpers
       cmd_exec(cmd, volume_env)
     end
 
+    def auth_env
+      {
+        "BLOCKBRIDGE_API_KEY" => nil
+      }
+    end
+
     def vol_param_keys
       [
         :type,
         :user,
-        :otp,
         :access_token,
         :capacity,
         :attributes,
@@ -67,6 +72,15 @@ module Helpers
           cmd_exec("bb -k user info --user #{volume_params[:user]} -X login -X serial --tabular", profile_env)
           volume_params[:user]
         end
+    end
+
+    def auth_login(token, otp = nil, su = nil)
+      logger.info "Attempting login #{token} #{otp} #{su}"
+      cmd = ['bb', '-k', 'auth', 'login', '--user', token, '--noninteractive', '--disable-netrc', '--expires-in', '60' ]
+      cmd.concat ['--otp', otp ] if otp
+      cmd.concat ['--su', su] if su
+      token = cmd_exec_raw(*cmd, auth_env)
+      token.chomp
     end
 
     def volume_type
@@ -150,9 +164,13 @@ module Helpers
       info.map do |xmd|
         v = xmd[:data][:volume]
         v[:hosts] = volume_hosts(xmd) if volume_hosts(xmd).length > 0
-        v.delete(:scope_token)
         v
       end
+    end
+
+    def volume_info_display(v)
+      v.delete(:scope_token)
+      v
     end
 
     def volume_mapped_name(volume)
@@ -172,13 +190,24 @@ module Helpers
       volume_info_map(info)
     end
 
+    def volume_display
+      volume_info_display(volume_info)
+    end
+
     def volume_lookup
-      raise Blockbridge::NotFound, "No volume named #{vol_name} found" if volume_info.length == 0
-      volume_info
+      vols = volume_display
+      raise Blockbridge::NotFound, "No volume named #{vol_name} found" if vols.length == 0
+      vols
+    end
+
+    def volume_lookup_all
+      volume_lookup
+    rescue
+      []
     end
 
     def volume_list
-      volume_info.map do |v|
+      volume_display.map do |v|
         {
           Name:       v[:name],
           Mountpoint: mnt_path(v[:name]),
@@ -189,7 +218,7 @@ module Helpers
     def volume_get
       volume_lookup.map { |v|
         {
-          Name:       v[:name],
+          Name:       params_name || v[:name],
           Mountpoint: mnt_path(v[:name]),
         }
       }.first
@@ -203,7 +232,6 @@ module Helpers
       else
         volume_provision
       end
-      volume_scope_token
       logger.info "#{vol_name} created"
     rescue
       volume_cmd_exec("bb_remove") rescue nil
@@ -247,28 +275,28 @@ module Helpers
       # - User has SU disabled
       # - User token should be created with respect OTP
       # - System token should be created with respect OTP
-      otp = volume_params[:otp]
-      if otp
+      if volume_scoped && (scope_token = volume_scope_token)
+        token = scope_token
+      elsif (otp = params_opts[:otp])
         if session_token_valid? otp
           token = get_session_token(otp)
         else
           if volume_params[:access_token]
             # login otp with user access token
-            token = auth_login_otp(otp, volume_params[:access_token])
+            token = auth_login(volume_params[:access_token], otp)
           else
             # login otp with system token and SU
-            token = auth_login_otp(otp, system_access_token, volume_user)
+            token = auth_login(system_access_token, otp, volume_user)
           end
           set_session_token(otp, token)
         end
       else
-        if volume_scoped && (scope_token = volume_scope_token)
-          token = scope_token
-        elsif volume_params[:access_token]
+        if volume_params[:access_token]
           token = volume_params[:access_token]
         else
           token = system_access_token
         end
+        auth_login(token)
       end
       token
     end
@@ -276,14 +304,6 @@ module Helpers
     def volume_su_user
       return if volume_access_token != system_access_token
       volume_user
-    end
-
-    def auth_login_otp(otp, token, su = nil)
-      cmd = "bb -k auth login --otp #{otp} --access-token #{token} #{su ? '--su su' : ""} --expires-in 60"
-      cmd_exec(cmd)
-
-      cmd = "bb -k auth token"
-      token = cmd_exec_raw(cmd)
     end
 
     def volume_scope_token
